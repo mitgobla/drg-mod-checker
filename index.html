@@ -312,7 +312,7 @@
 
                     const lines = text.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
                     const total = lines.length;
-                    let done = 0, okCount = 0, failCount = 0;
+                    let done = 0, okCount = 0, failCount = 0, skipCount = 0;
                     stats.textContent = `0 / ${total}`;
                     progressBar.style.width = `0%`;
 
@@ -323,17 +323,17 @@
 
                         // ignore non-https entries (local files, file://, relative paths) and .pak files
                         if (!line.startsWith('https://') || line.toLowerCase().includes('.pak')) {
-                            badgeContainer.innerHTML = `<span class="badge bg-secondary">ignored</span>`;
-                            failCount++;
+                            badgeContainer.innerHTML = `<span class="badge bg-secondary">⏭️ ignored</span>`;
+                            skipCount++;
                             done++;
-                            stats.textContent = `${done} / ${total}  · ✅ ${okCount} · ❌ ${failCount}`;
+                            stats.textContent = `${done} / ${total}  · ✅ ${okCount} · ❌ ${failCount} · ⏭️ ${skipCount}`;
                             progressBar.style.width = `${Math.round((done / total) * 100)}%`;
                             continue;
                         }
 
                         const id = line.includes('#') ? line.split('#').pop().trim() : null;
                         if (!id) {
-                            badgeContainer.innerHTML = `<span class="badge bg-secondary">no id</span>`;
+                            badgeContainer.innerHTML = `<span class="badge bg-secondary">❓ no id</span>`;
                             failCount++;
                         } else {
                             updateApiRequestCode(id, apiKey);
@@ -358,7 +358,7 @@
                                     if (waitMs === null) waitMs = DEFAULT_BASE_BACKOFF;
                                     // cap to 2 minutes
                                     waitMs = Math.min(waitMs, 120000);
-                                    badgeContainer.innerHTML = `<span class="badge bg-warning">429 - waiting ${Math.round(waitMs / 1000)}s</span>`;
+                                    badgeContainer.innerHTML = `<span class="badge bg-warning">⚠️ 429 - waiting ${Math.round(waitMs / 1000)}s</span>`;
                                     // wait the required time before continuing the loop (do not count as extra delay)
                                     await sleep(waitMs);
                                 } else {
@@ -370,7 +370,7 @@
                         }
 
                         done++;
-                        stats.textContent = `${done} / ${total}  · ✅ ${okCount} · ❌ ${failCount}`;
+                        stats.textContent = `${done} / ${total}  · ✅ ${okCount} · ❌ ${failCount} · ⏭️ ${skipCount}`;
                         progressBar.style.width = `${Math.round((done / total) * 100)}%`;
 
                         // enforce minimum between requests to keep under rate limit
