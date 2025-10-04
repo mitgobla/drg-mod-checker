@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Check DRG Mods</title>
+
+    <link href="https://cdn.jsdelivr.net/npm/bootswatch@5.3.2/dist/darkly/bootstrap.min.css" rel="stylesheet" />
+    <style>
+        body {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column
+        }
+
+        main {
+            flex: 1;
+            padding: 2rem
+        }
+
+        textarea {
+            font-family: monospace;
+            min-height: 160px
+        }
+
+        .mod-line {
+            display: flex;
+            align-items: center;
+            gap: .75rem;
+            justify-content: space-between
+        }
+
+        .result-badge {
+            min-width: 72px;
+            text-align: center
+        }
+
+        .muted-small {
+            font-size: .9rem;
+            color: var(--bs-gray-400)
+        }
+
+        .mono {
+            font-family: monospace
+        }
+
+        textarea#modlist {
+            white-space: pre;
+            /* preserve newlines but don't wrap long lines */
+            overflow-x: auto;
+            /* horizontal scrollbar when needed */
+            overflow-y: auto;
+            word-wrap: normal;
+            hyphens: none;
+        }
+
+        /* Ensure results pane never creates a horizontal scrollbar;
+           allow long URLs to wrap inside the result item instead */
+        .card-body.overflow-auto {
+            overflow-x: hidden;
+            /* prevent horizontal scrollbar */
+            overflow-y: auto;
+        }
+
+        /* Allow the URL text to wrap inside list items */
+        #out .mono {
+            white-space: normal;
+            overflow-wrap: anywhere;
+            /* break long tokens */
+            word-break: break-word;
+        }
+    </style>
+</head>
+
+<body>
+    <nav class="navbar navbar-dark bg-dark shadow-sm">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="#">DRG Mod Checker</a>
+            <span class="navbar-text muted-small">Executed in browser</span>
+            <span class="navbar-text muted-small text-info">made by mitgobla</span>
+        </div>
+    </nav>
+
+    <main class="container">
+        <div class="row g-4">
+            <div class="col-lg-6">
+                <div class="card">
+                    <div class="card-header d-flex align-items-center justify-content-between">
+                        <strong>Input</strong>
+                        <div class="muted-small">Sequential checks · throttled · backoff</div>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-2">
+                            <label class="form-label">mod.io API Key - <a href="https://mod.io/me/access" ,
+                                    target="_blank">Get</a><small class="muted-small text-info"> - Not the same as OAuth
+                                    Token</small></label>
+                            <input id="apiKey" class="form-control mono" placeholder="Enter your mod.io API key" />
+                        </div>
+
+                        <div class="mb-2">
+                            <label class="form-label">Mod list <small class="muted-small text-info"> - One URL per line.
+                                    <code class="pe-1">.pak</code> files are ignored.</small></label>
+                            <textarea id="modlist" class="form-control"
+                                placeholder="https://mod.io/g/drg/mod_name#12345" rows="10" wrap="off"></textarea>
+                        </div>
+
+                        <div class="row gx-2 gy-2 align-items-center">
+                            <div class="col-auto">
+                                <label class="form-label mb-0">Delay</label>
+                                <input id="delayMs" type="number" min="250" value="500" class="form-control" />
+                                <div class="muted-small text-center">ms between requests</div>
+                            </div>
+
+                            <div class="col-auto">
+                                <label class="form-label mb-0">Max Retries</label>
+                                <input id="maxRetries" type="number" min="0" value="5" class="form-control" />
+                                <div class="muted-small text-center">on 429 / network error</div>
+                            </div>
+
+                            <div class="col d-flex gap-2 justify-content-end">
+                                <button id="run" class="btn btn-primary align-self-end">Run</button>
+                                <button id="clear" class="btn btn-outline-secondary align-self-end">Clear</button>
+                            </div>
+                        </div>
+
+                        <div class="mt-3">
+                            <label class="form-label">API request</label>
+                            <div class="d-flex align-items-center gap-2 mb-1">
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" id="showKey" />
+                                    <label class="form-check-label muted-small" for="showKey">Show API key</label>
+                                </div>
+                                <small class="muted-small text-info"> - Current request (updates while running)</small>
+                            </div>
+                            <pre id="apiRequestExample" class="bg-black text-light p-2 rounded mono"
+                                style="overflow:auto;"><code id="apiRequestCode">GET https://g-2475.modapi.io/v1/games/2475/mods/{MOD_ID}?api_key={API_KEY}</code></pre>
+                            <small class="text-muted">This updates to show the exact GET URL used for each request. API
+                                key is masked by default; enable "Show API key" to reveal it.</small>
+                        </div>
+
+                        <div class="mt-3 text-muted-small muted-small">Note: do not share your API key with others.</div>
+                    </div>
+                </div>
+
+                <div class="card mt-3">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <div>
+                                <small class="text-muted">Progress</small>
+                            </div>
+                            <div>
+                                <small id="stats" class="text-muted mono">0 / 0</small>
+                            </div>
+                        </div>
+                        <div class="progress" style="height:10px">
+                            <div id="progressBar" class="progress-bar bg-success" role="progressbar" style="width:0%">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-6">
+                <div class="card h-100">
+                    <div class="card-header">
+                        <strong>Results</strong>
+                    </div>
+                    <div class="card-body overflow-auto" style="max-height:64vh">
+                        <ul id="out" class="list-group list-group-flush"></ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer class="bg-dark text-center text-muted py-2">
+        <small>Made for automation — results fetched from modapi (user key required)</small>
+    </footer>
+
+    <script>
+        (function () {
+            const RATE_LIMIT_PER_MIN = 60;               // requests per minute for user API keys
+            const MIN_DELAY_MS = Math.ceil(60000 / RATE_LIMIT_PER_MIN); // ~1000 ms
+            const DEFAULT_BASE_BACKOFF = 500;
+
+            // utils
+            function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+            function escapeHtml(s) { return String(s).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;'); }
+
+            // Fetch with exponential backoff and honor Retry-After header when present.
+            async function fetchWithBackoff(url, options = {}, maxRetries = 5, baseDelay = DEFAULT_BASE_BACKOFF) {
+                let attempt = 0;
+                while (true) {
+                    try {
+                        const res = await fetch(url, options);
+
+                        if (res.status === 429) {
+                            // Prefer Retry-After header if provided by API
+                            const ra = res.headers.get('retry-after');
+                            let waitMs = null;
+                            if (ra) {
+                                // Retry-After can be seconds or an HTTP-date
+                                const sec = parseInt(ra, 10);
+                                if (!Number.isNaN(sec)) {
+                                    waitMs = sec * 1000;
+                                } else {
+                                    const date = Date.parse(ra);
+                                    if (!Number.isNaN(date)) {
+                                        waitMs = Math.max(0, date - Date.now());
+                                    }
+                                }
+                            }
+                            if (waitMs === null) {
+                                // fallback to exponential backoff
+                                waitMs = baseDelay * Math.pow(2, attempt);
+                            }
+                            // Cap wait to a reasonable maximum (e.g. 2 minutes)
+                            waitMs = Math.min(waitMs, 120000);
+                            await sleep(waitMs);
+                            attempt++;
+                            if (attempt > maxRetries) return res; // give caller the 429 response after retries exhausted
+                            continue;
+                        }
+
+                        return res;
+                    } catch (err) {
+                        if (attempt >= maxRetries) throw err;
+                        const wait = baseDelay * Math.pow(2, attempt);
+                        await sleep(wait);
+                        attempt++;
+                    }
+                }
+            }
+
+            async function checkMod(id, apiKey, maxRetries) {
+                const url = `https://g-2475.modapi.io/v1/games/2475/mods/${encodeURIComponent(id)}?api_key=${encodeURIComponent(apiKey)}`;
+                try {
+                    const r = await fetchWithBackoff(url, { headers: { Accept: 'application/json' } }, maxRetries, DEFAULT_BASE_BACKOFF);
+                    if (!r.ok) return { ok: false, code: r.status, retryAfter: r.headers?.get?.('retry-after') ?? null };
+                    const j = await r.json();
+                    if (j.status !== 1 || j.visible !== 1) return { ok: false, code: 'hidden', detail: j };
+                    return { ok: true, detail: j };
+                } catch (e) {
+                    return { ok: false, code: 'error', error: e.message };
+                }
+            }
+
+            // DOM helpers
+            function makeListItem(text) {
+                const li = document.createElement('li');
+                li.className = 'list-group-item bg-transparent d-flex align-items-center mod-line';
+                li.innerHTML = `<div class="flex-grow-1 mono">${escapeHtml(text)}</div><div class="result-badge"></div>`;
+                return li;
+            }
+
+            function maskedKey(key, show) {
+                if (!key) return '{API_KEY}';
+                if (show) return key;
+                if (key.length <= 8) return '*'.repeat(key.length);
+                return key.slice(0, 4) + '…' + key.slice(-4);
+            }
+
+            function updateApiRequestCode(modId, apiKey) {
+                const codeEl = document.getElementById('apiRequestCode');
+                if (!codeEl) return;
+                const show = !!document.getElementById('showKey')?.checked;
+                const idDisplay = modId ?? '{MOD_ID}';
+                const keyDisplay = maskedKey(apiKey ?? '', show);
+                codeEl.textContent = `GET https://g-2475.modapi.io/v1/games/2475/mods/${idDisplay}?api_key=${keyDisplay}`;
+            }
+
+            // enforce sensible minimum on the delay input
+            function enforceDelayMinimum(el) {
+                if (!el) return;
+                el.min = String(MIN_DELAY_MS);
+                let v = Math.max(MIN_DELAY_MS, parseInt(el.value || String(MIN_DELAY_MS), 10));
+                el.value = String(v);
+                return v;
+            }
+
+            // main
+            const runBtn = document.getElementById('run');
+            const clearBtn = document.getElementById('clear');
+            const showKeyToggle = document.getElementById('showKey');
+            const delayInput = document.getElementById('delayMs');
+
+            // ensure the delay input can't be set too small by keyboard
+            if (delayInput) delayInput.min = String(MIN_DELAY_MS);
+
+            if (runBtn) {
+                runBtn.addEventListener('click', async () => {
+                    let apiKey = document.getElementById('apiKey')?.value.trim() ?? '';
+                    const text = document.getElementById('modlist')?.value ?? '';
+                    let delayMs = Math.max(0, parseInt(document.getElementById('delayMs')?.value || String(MIN_DELAY_MS), 10));
+                    const maxRetries = Math.max(0, parseInt(document.getElementById('maxRetries')?.value || '5', 10));
+                    const out = document.getElementById('out');
+                    const stats = document.getElementById('stats');
+                    const progressBar = document.getElementById('progressBar');
+
+                    if (!out || !stats || !progressBar) { alert('Missing UI elements'); return; }
+                    // enforce minimum delay based on API rate limit
+                    if (delayMs < MIN_DELAY_MS) {
+                        delayMs = MIN_DELAY_MS;
+                        if (document.getElementById('delayMs')) document.getElementById('delayMs').value = String(MIN_DELAY_MS);
+                    }
+
+                    out.innerHTML = '';
+                    if (!apiKey) { alert('Enter API key'); return; }
+
+                    updateApiRequestCode(null, apiKey);
+
+                    const lines = text.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+                    const total = lines.length;
+                    let done = 0, okCount = 0, failCount = 0;
+                    stats.textContent = `0 / ${total}`;
+                    progressBar.style.width = `0%`;
+
+                    for (const line of lines) {
+                        const li = makeListItem(line);
+                        const badgeContainer = li.querySelector('.result-badge');
+                        out.appendChild(li);
+
+                        // ignore non-https entries (local files, file://, relative paths) and .pak files
+                        if (!line.startsWith('https://') || line.toLowerCase().includes('.pak')) {
+                            badgeContainer.innerHTML = `<span class="badge bg-secondary">ignored</span>`;
+                            failCount++;
+                            done++;
+                            stats.textContent = `${done} / ${total}  · ✅ ${okCount} · ❌ ${failCount}`;
+                            progressBar.style.width = `${Math.round((done / total) * 100)}%`;
+                            continue;
+                        }
+
+                        const id = line.includes('#') ? line.split('#').pop().trim() : null;
+                        if (!id) {
+                            badgeContainer.innerHTML = `<span class="badge bg-secondary">no id</span>`;
+                            failCount++;
+                        } else {
+                            updateApiRequestCode(id, apiKey);
+                            badgeContainer.innerHTML = `<span class="spinner-border spinner-border-sm text-info" role="status"></span>`;
+
+                            const res = await checkMod(id, apiKey, maxRetries);
+
+                            if (res.ok) {
+                                badgeContainer.innerHTML = `<span class="badge bg-success">✅ OK</span>`;
+                                okCount++;
+                            } else {
+                                // if API returned 429 and provided Retry-After, inform user and wait automatically before continuing
+                                if (res.code === 429 && res.retryAfter) {
+                                    const ra = res.retryAfter;
+                                    let waitMs = null;
+                                    const sec = parseInt(ra, 10);
+                                    if (!Number.isNaN(sec)) waitMs = sec * 1000;
+                                    else {
+                                        const date = Date.parse(ra);
+                                        if (!Number.isNaN(date)) waitMs = Math.max(0, date - Date.now());
+                                    }
+                                    if (waitMs === null) waitMs = DEFAULT_BASE_BACKOFF;
+                                    // cap to 2 minutes
+                                    waitMs = Math.min(waitMs, 120000);
+                                    badgeContainer.innerHTML = `<span class="badge bg-warning">429 - waiting ${Math.round(waitMs / 1000)}s</span>`;
+                                    // wait the required time before continuing the loop (do not count as extra delay)
+                                    await sleep(waitMs);
+                                } else {
+                                    const code = res.code ?? 'err';
+                                    badgeContainer.innerHTML = `<span class="badge bg-danger">❌ ${code}</span>`;
+                                }
+                                failCount++;
+                            }
+                        }
+
+                        done++;
+                        stats.textContent = `${done} / ${total}  · ✅ ${okCount} · ❌ ${failCount}`;
+                        progressBar.style.width = `${Math.round((done / total) * 100)}%`;
+
+                        // enforce minimum between requests to keep under rate limit
+                        if (delayMs > 0) await sleep(delayMs);
+                    }
+                });
+            }
+
+            if (showKeyToggle) {
+                showKeyToggle.addEventListener('change', () => {
+                    const apiKey = document.getElementById('apiKey')?.value.trim() ?? '';
+                    updateApiRequestCode(null, apiKey);
+                });
+            }
+
+            if (clearBtn) {
+                clearBtn.addEventListener('click', () => {
+                    document.getElementById('modlist').value = '';
+                    document.getElementById('out').innerHTML = '';
+                    document.getElementById('stats').textContent = '0 / 0';
+                    document.getElementById('progressBar').style.width = '0%';
+                    updateApiRequestCode(null, '');
+                });
+            }
+
+            // initialise example display and enforce minimum on load
+            document.addEventListener('DOMContentLoaded', () => {
+                if (delayInput) enforceDelayMinimum(delayInput);
+                updateApiRequestCode(null, '');
+            });
+        })();
+    </script>
+</body>
+
+</html>
